@@ -5,7 +5,7 @@ import ctypes
 import keyboard
 from PyQt5.QtWidgets import QApplication, QWidget
 from PyQt5.QtCore import Qt, QTimer, QPoint
-from PyQt5.QtGui import QPainter, QColor, QPen, QIcon
+from PyQt5.QtGui import QPainter, QColor, QPen, QIcon, QPolygon
 
 from GUI import CrosshairGUI
 
@@ -23,7 +23,8 @@ class CrosshairOverlay(QWidget):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.setCursor(Qt.BlankCursor)
+        # If you do NOT want to hide the cursor globally, comment the next line:
+        # self.setCursor(Qt.BlankCursor)
         self.showFullScreen()
 
         # ✅ Windows-level click-through
@@ -35,6 +36,7 @@ class CrosshairOverlay(QWidget):
         self.timer.timeout.connect(self.update)
         self.timer.start(100)
 
+    # ----- setters -----
     def set_dot_color(self, color: QColor):
         self.dot_color = color
         self.update()
@@ -54,14 +56,22 @@ class CrosshairOverlay(QWidget):
     def set_shape(self, shape: str):
         self.shape = shape
         self.update()
-        
+
     def set_center_dot_size(self, size: int):
         self.center_dot_size = size
         self.update()
-        
+
     def set_center_dot_color(self, color: QColor):
         self.center_dot_color = color
         self.update()
+
+    def _paint_center_dot(self, qp, cx, cy):
+        if not self.show_center_dot:
+            return
+        r = max(1, int(self.center_dot_size))
+        qp.setBrush(self.center_dot_color)
+        qp.setPen(Qt.NoPen)
+        qp.drawEllipse(QPoint(cx, cy), r, r)
 
     def paintEvent(self, event):
         qp = QPainter(self)
@@ -74,28 +84,19 @@ class CrosshairOverlay(QWidget):
 
         if self.shape == "Dot":
             qp.drawEllipse(QPoint(cx, cy), self.dot_radius, self.dot_radius)
-            center_radius = self.center_dot_size
-            qp.setBrush(self.center_dot_color)
-            qp.setPen(Qt.NoPen)
-            qp.drawEllipse(QPoint(cx, cy), center_radius, center_radius)
+            self._paint_center_dot(qp, cx, cy)
 
         elif self.shape == "Cross":
             length = self.dot_radius * 2
             qp.drawLine(cx - length, cy, cx + length, cy)
             qp.drawLine(cx, cy - length, cx, cy + length)
-            center_radius = self.center_dot_size
-            qp.setBrush(self.center_dot_color)
-            qp.setPen(Qt.NoPen)
-            qp.drawEllipse(QPoint(cx, cy), center_radius, center_radius)
+            self._paint_center_dot(qp, cx, cy)
 
         elif self.shape == "V Cross":
             length = self.dot_radius * 2
             qp.drawLine(cx - length, cy - length, cx + length, cy + length)
             qp.drawLine(cx + length, cy - length, cx - length, cy + length)
-            center_radius = self.center_dot_size
-            qp.setBrush(self.center_dot_color)
-            qp.setPen(Qt.NoPen)
-            qp.drawEllipse(QPoint(cx, cy), center_radius, center_radius)
+            self._paint_center_dot(qp, cx, cy)
 
         elif self.shape == "Arrow Up":
             length = self.dot_radius * 2
@@ -103,11 +104,8 @@ class CrosshairOverlay(QWidget):
             qp.setPen(pen)
             qp.setBrush(Qt.NoBrush)
             arrow = [QPoint(cx - length, cy + length), QPoint(cx, cy), QPoint(cx + length, cy + length)]
-            qp.drawPolyline(*arrow)
-            if self.show_center_dot:
-                qp.setBrush(self.center_dot_color)
-                qp.setPen(Qt.NoPen)
-                qp.drawEllipse(QPoint(cx, cy), max(1, self.dot_radius // 3), max(1, self.dot_radius // 3))
+            qp.drawPolyline(QPolygon(arrow))
+            self._paint_center_dot(qp, cx, cy)
 
         elif self.shape == "Shaped Crosshair":
             l = self.dot_radius * 2
@@ -120,26 +118,24 @@ class CrosshairOverlay(QWidget):
             qp.drawLine(cx - l, cy + l, cx - l, cy + gap)
             qp.drawLine(cx + gap, cy + l, cx + l, cy + l)
             qp.drawLine(cx + l, cy + l, cx + l, cy + gap)
-            center_radius = self.center_dot_size
-            qp.setBrush(self.center_dot_color)
-            qp.setPen(Qt.NoPen)
-            qp.drawEllipse(QPoint(cx, cy), center_radius, center_radius)
+            self._paint_center_dot(qp, cx, cy)
 
         elif self.shape == "Vertical Line":
             length = self.dot_radius * 3
-            thickness = self.thickness
-            pen = QPen(self.dot_color, thickness, Qt.SolidLine, Qt.RoundCap)
+            pen = QPen(self.dot_color, self.thickness, Qt.SolidLine, Qt.RoundCap)
             qp.setPen(pen)
             qp.setBrush(Qt.NoBrush)
             qp.drawLine(cx, cy + 1, cx, cy + length)
+            # (no center dot by design)
 
         elif self.shape == "Arrow Sides":
             length = self.dot_radius * 2
             offset = self.dot_radius
-            qp.setBrush(self.center_dot_color)
-            qp.setPen(Qt.NoPen)
-            qp.drawEllipse(QPoint(cx, cy), self.center_dot_size, self.center_dot_size)
+            # center dot (optional)
+            self._paint_center_dot(qp, cx, cy)
+            # arrows
             qp.setPen(QPen(self.dot_color, self.thickness, Qt.SolidLine, Qt.RoundCap))
+            qp.setBrush(Qt.NoBrush)
             qp.drawLine(cx - offset, cy - offset, cx - length, cy)
             qp.drawLine(cx - offset, cy + offset, cx - length, cy)
             qp.drawLine(cx + offset, cy - offset, cx + length, cy)
@@ -152,26 +148,24 @@ class CrosshairOverlay(QWidget):
             pen = QPen(self.dot_color, self.thickness, Qt.SolidLine, Qt.RoundCap)
             qp.setPen(pen)
             qp.setBrush(Qt.NoBrush)
+            # vertical down from center
             qp.drawLine(cx, cy + 1, cx, cy + vertical_length - 8)
+            # top bar above center
             qp.drawLine(cx - length, cy - spacing, cx - spacing, cy - spacing)
             qp.drawLine(cx + spacing, cy - spacing, cx + length, cy - spacing)
+            # (no center dot by design)
 
         elif self.shape == "Circle Dot":
             radius = self.dot_radius * 2
             qp.setPen(QPen(self.dot_color, self.thickness))
             qp.setBrush(Qt.NoBrush)
             qp.drawEllipse(QPoint(cx, cy), radius, radius)
-            qp.setBrush(self.center_dot_color)
-            qp.setPen(Qt.NoPen)
-            qp.drawEllipse(QPoint(cx, cy), self.center_dot_size, self.center_dot_size)
+            self._paint_center_dot(qp, cx, cy)
 
 
 def start_hotkey_listener(gui: CrosshairGUI, overlay: CrosshairOverlay):
     def toggle_gui():
-        if gui.isVisible():
-            gui.hide()
-        else:
-            gui.show()
+        gui.setVisible(not gui.isVisible())
 
     def exit_app():
         gui.close()
