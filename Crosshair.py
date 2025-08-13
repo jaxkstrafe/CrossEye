@@ -1,0 +1,194 @@
+# main.py
+import sys
+import threading
+import ctypes
+import keyboard
+from PyQt5.QtWidgets import QApplication, QWidget
+from PyQt5.QtCore import Qt, QTimer, QPoint
+from PyQt5.QtGui import QPainter, QColor, QPen, QIcon
+
+from GUI import CrosshairGUI
+
+class CrosshairOverlay(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.dot_color = QColor(255, 0, 0)
+        self.dot_radius = 5
+        self.thickness = 2
+        self.shape = "Dot"
+        self.center_dot_color = QColor("#333333")
+        self.center_dot_size = 2
+        self.show_center_dot = True
+
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setCursor(Qt.BlankCursor)
+        self.showFullScreen()
+
+        # ✅ Windows-level click-through
+        hwnd = self.winId().__int__()
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, -20)
+        ctypes.windll.user32.SetWindowLongW(hwnd, -20, style | 0x80000 | 0x20)  # WS_EX_LAYERED | WS_EX_TRANSPARENT
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update)
+        self.timer.start(100)
+
+    def set_dot_color(self, color: QColor):
+        self.dot_color = color
+        self.update()
+
+    def set_show_center_dot(self, show):
+        self.show_center_dot = show
+        self.update()
+
+    def set_dot_size(self, radius: int):
+        self.dot_radius = radius
+        self.update()
+
+    def set_thickness(self, thickness: int):
+        self.thickness = thickness
+        self.update()
+
+    def set_shape(self, shape: str):
+        self.shape = shape
+        self.update()
+        
+    def set_center_dot_size(self, size: int):
+        self.center_dot_size = size
+        self.update()
+        
+    def set_center_dot_color(self, color: QColor):
+        self.center_dot_color = color
+        self.update()
+
+    def paintEvent(self, event):
+        qp = QPainter(self)
+        qp.setRenderHint(QPainter.Antialiasing)
+        qp.setPen(QPen(self.dot_color, self.thickness))
+        qp.setBrush(self.dot_color)
+
+        cx = self.width() // 2
+        cy = self.height() // 2
+
+        if self.shape == "Dot":
+            qp.drawEllipse(QPoint(cx, cy), self.dot_radius, self.dot_radius)
+            center_radius = self.center_dot_size
+            qp.setBrush(self.center_dot_color)
+            qp.setPen(Qt.NoPen)
+            qp.drawEllipse(QPoint(cx, cy), center_radius, center_radius)
+
+        elif self.shape == "Cross":
+            length = self.dot_radius * 2
+            qp.drawLine(cx - length, cy, cx + length, cy)
+            qp.drawLine(cx, cy - length, cx, cy + length)
+            center_radius = self.center_dot_size
+            qp.setBrush(self.center_dot_color)
+            qp.setPen(Qt.NoPen)
+            qp.drawEllipse(QPoint(cx, cy), center_radius, center_radius)
+
+        elif self.shape == "V Cross":
+            length = self.dot_radius * 2
+            qp.drawLine(cx - length, cy - length, cx + length, cy + length)
+            qp.drawLine(cx + length, cy - length, cx - length, cy + length)
+            center_radius = self.center_dot_size
+            qp.setBrush(self.center_dot_color)
+            qp.setPen(Qt.NoPen)
+            qp.drawEllipse(QPoint(cx, cy), center_radius, center_radius)
+
+        elif self.shape == "Arrow Up":
+            length = self.dot_radius * 2
+            pen = QPen(self.dot_color, self.thickness, Qt.SolidLine, Qt.RoundCap)
+            qp.setPen(pen)
+            qp.setBrush(Qt.NoBrush)
+            arrow = [QPoint(cx - length, cy + length), QPoint(cx, cy), QPoint(cx + length, cy + length)]
+            qp.drawPolyline(*arrow)
+            if self.show_center_dot:
+                qp.setBrush(self.center_dot_color)
+                qp.setPen(Qt.NoPen)
+                qp.drawEllipse(QPoint(cx, cy), max(1, self.dot_radius // 3), max(1, self.dot_radius // 3))
+
+        elif self.shape == "Shaped Crosshair":
+            l = self.dot_radius * 2
+            gap = self.dot_radius
+            qp.drawLine(cx - l, cy - l, cx - gap, cy - l)
+            qp.drawLine(cx - l, cy - l, cx - l, cy - gap)
+            qp.drawLine(cx + gap, cy - l, cx + l, cy - l)
+            qp.drawLine(cx + l, cy - l, cx + l, cy - gap)
+            qp.drawLine(cx - l, cy + l, cx - gap, cy + l)
+            qp.drawLine(cx - l, cy + l, cx - l, cy + gap)
+            qp.drawLine(cx + gap, cy + l, cx + l, cy + l)
+            qp.drawLine(cx + l, cy + l, cx + l, cy + gap)
+            center_radius = self.center_dot_size
+            qp.setBrush(self.center_dot_color)
+            qp.setPen(Qt.NoPen)
+            qp.drawEllipse(QPoint(cx, cy), center_radius, center_radius)
+
+        elif self.shape == "Vertical Line":
+            length = self.dot_radius * 3
+            thickness = self.thickness
+            pen = QPen(self.dot_color, thickness, Qt.SolidLine, Qt.RoundCap)
+            qp.setPen(pen)
+            qp.setBrush(Qt.NoBrush)
+            qp.drawLine(cx, cy + 1, cx, cy + length)
+
+        elif self.shape == "Arrow Sides":
+            length = self.dot_radius * 2
+            offset = self.dot_radius
+            qp.setBrush(self.center_dot_color)
+            qp.setPen(Qt.NoPen)
+            qp.drawEllipse(QPoint(cx, cy), self.center_dot_size, self.center_dot_size)
+            qp.setPen(QPen(self.dot_color, self.thickness, Qt.SolidLine, Qt.RoundCap))
+            qp.drawLine(cx - offset, cy - offset, cx - length, cy)
+            qp.drawLine(cx - offset, cy + offset, cx - length, cy)
+            qp.drawLine(cx + offset, cy - offset, cx + length, cy)
+            qp.drawLine(cx + offset, cy + offset, cx + length, cy)
+
+        elif self.shape == "T-Hair":
+            length = self.dot_radius * 2
+            spacing = self.dot_radius // 2
+            vertical_length = self.dot_radius * 3
+            pen = QPen(self.dot_color, self.thickness, Qt.SolidLine, Qt.RoundCap)
+            qp.setPen(pen)
+            qp.setBrush(Qt.NoBrush)
+            qp.drawLine(cx, cy + 1, cx, cy + vertical_length - 8)
+            qp.drawLine(cx - length, cy - spacing, cx - spacing, cy - spacing)
+            qp.drawLine(cx + spacing, cy - spacing, cx + length, cy - spacing)
+
+        elif self.shape == "Circle Dot":
+            radius = self.dot_radius * 2
+            qp.setPen(QPen(self.dot_color, self.thickness))
+            qp.setBrush(Qt.NoBrush)
+            qp.drawEllipse(QPoint(cx, cy), radius, radius)
+            qp.setBrush(self.center_dot_color)
+            qp.setPen(Qt.NoPen)
+            qp.drawEllipse(QPoint(cx, cy), self.center_dot_size, self.center_dot_size)
+
+
+def start_hotkey_listener(gui: CrosshairGUI, overlay: CrosshairOverlay):
+    def toggle_gui():
+        if gui.isVisible():
+            gui.hide()
+        else:
+            gui.show()
+
+    def exit_app():
+        gui.close()
+        overlay.close()
+        sys.exit(0)
+
+    keyboard.add_hotkey("ctrl+alt+h", toggle_gui)
+    keyboard.add_hotkey("ctrl+alt+x", exit_app)
+    keyboard.wait()
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon("Crosshair.ico"))
+
+    overlay = CrosshairOverlay()
+    gui = CrosshairGUI(overlay)
+    gui.show()
+
+    threading.Thread(target=start_hotkey_listener, args=(gui, overlay), daemon=True).start()
+    sys.exit(app.exec_())
