@@ -1,4 +1,4 @@
-# main.py
+# main.py 
 import sys
 import threading
 import ctypes
@@ -24,7 +24,7 @@ class CrosshairOverlay(QWidget):
 
         # --- Custom crosshair image state ---
         self.custom_pixmap: QPixmap | None = None
-        self.custom_opacity = 1.0      # 0.0 - 1.0 (kept simple for now; sized by Size slider)
+        self.custom_opacity = 1.0      # 0.0 - 1.0
 
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -85,7 +85,17 @@ class CrosshairOverlay(QWidget):
         self.update()
 
     def set_custom_opacity(self, opacity: float):
-        self.custom_opacity = max(0.0, min(1.0, float(opacity)))
+        """Set overall overlay opacity (0.0–1.0) for ALL shapes/images."""
+        try:
+            val = float(opacity)
+        except Exception:
+            val = 1.0
+        self.custom_opacity = max(0.0, min(1.0, val))
+        # Try window-level opacity (smoothest on Windows); keep value for painter fallback
+        try:
+            self.setWindowOpacity(self.custom_opacity)
+        except Exception:
+            pass
         self.update()
 
     # ----- helpers -----
@@ -101,7 +111,6 @@ class CrosshairOverlay(QWidget):
         if not self.custom_pixmap:
             return
         # Use Size slider as "target width" for the image (in pixels * a factor).
-        # Feel free to tweak the factor — 10 gives a nice usable range.
         target_width = max(8, int(self.dot_radius * 10))
         pm = self.custom_pixmap
 
@@ -111,14 +120,15 @@ class CrosshairOverlay(QWidget):
         x = cx - w // 2
         y = cy - h // 2
 
-        old_opacity = qp.opacity()
-        qp.setOpacity(self.custom_opacity)
+        # qp opacity is already set globally in paintEvent
         qp.drawPixmap(QRect(x, y, w, h), scaled)
-        qp.setOpacity(old_opacity)
 
     def paintEvent(self, event):
         qp = QPainter(self)
         qp.setRenderHint(QPainter.Antialiasing)
+
+        # Apply opacity to ALL painting (fallback if setWindowOpacity isn't used)
+        qp.setOpacity(self.custom_opacity)
 
         cx = self.width() // 2
         cy = self.height() // 2
