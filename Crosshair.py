@@ -4,8 +4,8 @@ import threading
 import ctypes
 import keyboard
 from PyQt5.QtWidgets import QApplication, QWidget
-from PyQt5.QtCore import Qt, QTimer, QPoint
-from PyQt5.QtGui import QPainter, QColor, QPen, QIcon, QPolygon
+from PyQt5.QtCore import Qt, QTimer, QPoint, QRect
+from PyQt5.QtGui import QPainter, QColor, QPen, QIcon, QPolygon, QPixmap
 
 from GUI import CrosshairGUI
 
@@ -13,17 +13,22 @@ class CrosshairOverlay(QWidget):
     def __init__(self):
         super().__init__()
         self.dot_color = QColor(255, 0, 0)
-        self.dot_radius = 5
+        self.dot_radius = 5           # used as the main "size" control
         self.thickness = 2
         self.shape = "Dot"
+
+        # Center-dot controls
         self.center_dot_color = QColor("#333333")
         self.center_dot_size = 2
         self.show_center_dot = True
 
+        # --- Custom crosshair image state ---
+        self.custom_pixmap: QPixmap | None = None
+        self.custom_opacity = 1.0      # 0.0 - 1.0 (kept simple for now; sized by Size slider)
+
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
-        # If you do NOT want to hide the cursor globally, comment the next line:
         # self.setCursor(Qt.BlankCursor)
         self.showFullScreen()
 
@@ -57,7 +62,7 @@ class CrosshairOverlay(QWidget):
         self.shape = shape
         self.update()
 
-    def set_center_dot_size(self, size: int):
+    def set_center_dot_size(self, size: int | float):
         self.center_dot_size = size
         self.update()
 
@@ -65,6 +70,25 @@ class CrosshairOverlay(QWidget):
         self.center_dot_color = color
         self.update()
 
+    # --- custom image controls ---
+    def set_custom_image(self, path: str | None):
+        """Load a custom image (PNG/JPG with alpha). Set None to clear."""
+        if path:
+            pm = QPixmap(path)
+            if not pm.isNull():
+                self.custom_pixmap = pm
+                self.set_shape("Custom")
+            else:
+                self.custom_pixmap = None
+        else:
+            self.custom_pixmap = None
+        self.update()
+
+    def set_custom_opacity(self, opacity: float):
+        self.custom_opacity = max(0.0, min(1.0, float(opacity)))
+        self.update()
+
+    # ----- helpers -----
     def _paint_center_dot(self, qp, cx, cy):
         if not self.show_center_dot:
             return
@@ -73,14 +97,39 @@ class CrosshairOverlay(QWidget):
         qp.setPen(Qt.NoPen)
         qp.drawEllipse(QPoint(cx, cy), r, r)
 
+    def _paint_custom(self, qp, cx, cy):
+        if not self.custom_pixmap:
+            return
+        # Use Size slider as "target width" for the image (in pixels * a factor).
+        # Feel free to tweak the factor — 10 gives a nice usable range.
+        target_width = max(8, int(self.dot_radius * 10))
+        pm = self.custom_pixmap
+
+        # Preserve aspect ratio
+        scaled = pm.scaledToWidth(target_width, Qt.SmoothTransformation)
+        w, h = scaled.width(), scaled.height()
+        x = cx - w // 2
+        y = cy - h // 2
+
+        old_opacity = qp.opacity()
+        qp.setOpacity(self.custom_opacity)
+        qp.drawPixmap(QRect(x, y, w, h), scaled)
+        qp.setOpacity(old_opacity)
+
     def paintEvent(self, event):
         qp = QPainter(self)
         qp.setRenderHint(QPainter.Antialiasing)
-        qp.setPen(QPen(self.dot_color, self.thickness))
-        qp.setBrush(self.dot_color)
 
         cx = self.width() // 2
         cy = self.height() // 2
+
+        # Custom image path
+        if self.shape == "Custom" and self.custom_pixmap:
+            self._paint_custom(qp, cx, cy)
+            return
+
+        qp.setPen(QPen(self.dot_color, self.thickness))
+        qp.setBrush(self.dot_color)
 
         if self.shape == "Dot":
             qp.drawEllipse(QPoint(cx, cy), self.dot_radius, self.dot_radius)
@@ -126,14 +175,11 @@ class CrosshairOverlay(QWidget):
             qp.setPen(pen)
             qp.setBrush(Qt.NoBrush)
             qp.drawLine(cx, cy + 1, cx, cy + length)
-            # (no center dot by design)
 
         elif self.shape == "Arrow Sides":
             length = self.dot_radius * 2
             offset = self.dot_radius
-            # center dot (optional)
             self._paint_center_dot(qp, cx, cy)
-            # arrows
             qp.setPen(QPen(self.dot_color, self.thickness, Qt.SolidLine, Qt.RoundCap))
             qp.setBrush(Qt.NoBrush)
             qp.drawLine(cx - offset, cy - offset, cx - length, cy)
@@ -148,12 +194,9 @@ class CrosshairOverlay(QWidget):
             pen = QPen(self.dot_color, self.thickness, Qt.SolidLine, Qt.RoundCap)
             qp.setPen(pen)
             qp.setBrush(Qt.NoBrush)
-            # vertical down from center
             qp.drawLine(cx, cy + 1, cx, cy + vertical_length - 8)
-            # top bar above center
             qp.drawLine(cx - length, cy - spacing, cx - spacing, cy - spacing)
             qp.drawLine(cx + spacing, cy - spacing, cx + length, cy - spacing)
-            # (no center dot by design)
 
         elif self.shape == "Circle Dot":
             radius = self.dot_radius * 2

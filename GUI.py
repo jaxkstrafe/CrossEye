@@ -2,7 +2,7 @@ import sys
 import os
 import json
 from PyQt5.QtWidgets import (
-    QWidget, QPushButton, QSlider, QLabel, QComboBox, QColorDialog,
+    QWidget, QPushButton, QSlider, QLabel, QComboBox, QColorDialog, QFileDialog,
     QVBoxLayout, QHBoxLayout, QGroupBox, QDialog, QCheckBox, QTextBrowser, QShortcut
 )
 from PyQt5.QtCore import Qt, QSize, QPoint
@@ -11,89 +11,11 @@ from ShapePreviewSelector import ShapePreviewSelector
 
 # Helper function for PyInstaller compatibility
 def resource_path(relative_path):
-    # Gets the correct path whether running as script or from PyInstaller .exe
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath("."), relative_path)
 
-
 SETTINGS_FILE = "settings.json"
-
-
-# -----------------------------
-# Optional tiny drawing widget
-# -----------------------------
-class CrosshairPreview(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.dot_color = QColor("#FF0000")
-        self.center_dot_color = QColor("#333333")
-        self.shape = "Dot"
-        self.radius = 5
-        self.thickness = 2
-        self.setFixedSize(100, 100)
-        self.show_center_dot = True
-        self.center_dot_size = max(1, self.radius // 3)
-
-    def set_dot_color(self, color): self.dot_color = color; self.update()
-    def set_center_dot_color(self, color): self.center_dot_color = color; self.update()
-    def set_shape(self, shape): self.shape = shape; self.update()
-    def set_radius(self, radius): self.radius = radius; self.update()
-    def set_thickness(self, thickness): self.thickness = thickness; self.update()
-    def set_center_dot_size(self, size): self.center_dot_size = size; self.update()
-    def set_show_center_dot(self, show): self.show_center_dot = show; self.update()
-
-    def paintEvent(self, event):
-        qp = QPainter(self)
-        qp.setRenderHint(QPainter.Antialiasing)
-        cx, cy = self.width() // 2, self.height() // 2
-        qp.setPen(QPen(self.dot_color, self.thickness))
-        qp.setBrush(self.dot_color)
-
-        def paint_center_dot():
-            if self.show_center_dot:
-                d = max(1, int(self.center_dot_size))
-                qp.setBrush(self.center_dot_color)
-                qp.setPen(Qt.NoPen)
-                qp.drawEllipse(QPoint(cx, cy), d, d)
-
-        if self.shape == "Dot":
-            qp.drawEllipse(QPoint(cx, cy), self.radius, self.radius)
-            paint_center_dot()
-
-        elif self.shape == "Cross":
-            length = self.radius * 2
-            qp.drawLine(cx - length, cy, cx + length, cy)
-            qp.drawLine(cx, cy - length, cx, cy + length)
-            paint_center_dot()
-
-        elif self.shape == "V Cross":
-            length = self.radius * 2
-            qp.drawLine(cx - length, cy - length, cx + length, cy + length)
-            qp.drawLine(cx + length, cy - length, cx - length, cy + length)
-            paint_center_dot()
-
-        elif self.shape == "Arrow Up":
-            # (preview simplified)
-            paint_center_dot()
-
-        elif self.shape == "Shaped Crosshair":
-            l, gap = self.radius * 2, self.radius
-            qp.drawLine(cx - l, cy - l, cx - gap, cy - l)
-            qp.drawLine(cx - l, cy - l, cx - l, cy - gap)
-            qp.drawLine(cx + gap, cy - l, cx + l, cy - l)
-            qp.drawLine(cx + l, cy - l, cx + l, cy - gap)
-            qp.drawLine(cx - l, cy + l, cx - gap, cy + l)
-            qp.drawLine(cx - l, cy + l, cx - l, cy + gap)
-            qp.drawLine(cx + gap, cy + l, cx + l, cy + l)
-            qp.drawLine(cx + l, cy + l, cx + l, cy + gap)
-            paint_center_dot()
-
-        elif self.shape == "Vertical Line":
-            length = self.radius * 3
-            qp.setPen(QPen(self.dot_color, self.thickness, Qt.SolidLine, Qt.RoundCap))
-            qp.drawLine(cx, cy + 1, cx, cy + length)
-
 
 # -----------------------------
 # Help dialog
@@ -113,6 +35,7 @@ class HelpDialog(QDialog):
               <li><b>🎨 Colors:</b> Use “Change Crosshair Color” and “Change Center Dot Color”.</li>
               <li><b>📏 Size & Thickness:</b> Adjust the sliders for crosshair size and line thickness.</li>
               <li><b>🎯 Center Dot:</b> Use “Center Dot Size” slider and toggle “Show Center Dot”.</li>
+              <li><b>🖼️ Custom:</b> Click “Upload Custom Crosshair” to pick a PNG/JPG. The <i>Size</i> slider scales it.</li>
               <li><b>🔲 Shape:</b> Click “Select Crosshair Shape” to pick from visual previews.</li>
               <li><b>🖌️ Theme:</b> Pick a GUI theme from the dropdown.</li>
               <li><b>🔄 Reset:</b> “Reset to Defaults” restores factory settings.</li>
@@ -127,7 +50,7 @@ class HelpDialog(QDialog):
             <ul>
               <li>The overlay is <b>always on top</b> and click-through (it won’t block game input).</li>
               <li>Settings are saved to <code>settings.json</code> next to the app.</li>
-              <li>If you packaged this with PyInstaller, make sure assets like <code>Crosshair.ico</code> are included.</li>
+              <li>Custom crosshair supports PNG/JPG (PNG with transparency recommended).</li>
             </ul>
         """)
         layout.addWidget(tb)
@@ -136,30 +59,29 @@ class HelpDialog(QDialog):
         ok.clicked.connect(self.accept)
         layout.addWidget(ok, alignment=Qt.AlignRight)
 
-
 # -----------------------------
 # Main GUI
 # -----------------------------
 class CrosshairGUI(QWidget):
     def __init__(self, overlay):
         super().__init__()
-        # PyInstaller-safe icon
         self.setWindowIcon(QIcon(resource_path("Crosshair.ico")))
         self.setWindowTitle("Crosshair Settings")
-        self.setGeometry(100, 100, 340, 550)
+        self.setGeometry(100, 100, 360, 600)
 
         self.overlay = overlay
         self.settings = self.load_settings()
 
-        # Theme GIF (kept from your version)
+        # Theme GIF
+        from PyQt5.QtWidgets import QLabel
         self.theme_gif = QLabel()
         self.theme_movie = QMovie()
         self.theme_gif.setMovie(self.theme_movie)
 
-        # ---- Help button pinned top-left ----
+        # ---- Help button ----
         self.btn_help = QPushButton("?")
         self.btn_help.setCursor(Qt.PointingHandCursor)
-        self.btn_help.setFixedSize(32, 32)  # Square button
+        self.btn_help.setFixedSize(32, 32)
         self.btn_help.setStyleSheet("""
             QPushButton {
                 font-weight: bold;
@@ -170,15 +92,13 @@ class CrosshairGUI(QWidget):
         """)
         self.btn_help.clicked.connect(self.open_help)
 
-        # F1 shortcut for Help
         self.help_shortcut = QShortcut(QKeySequence("F1"), self)
         self.help_shortcut.activated.connect(self.open_help)
 
         help_layout = QHBoxLayout()
-        help_layout.setContentsMargins(0, 0, 0, 0)  # flush against window edge
+        help_layout.setContentsMargins(0, 0, 0, 0)
         help_layout.addWidget(self.btn_help, alignment=Qt.AlignLeft)
 
-        # GIF layout on its own row, centered
         gif_layout = QHBoxLayout()
         gif_layout.addStretch()
         gif_layout.addWidget(self.theme_gif, alignment=Qt.AlignCenter)
@@ -193,6 +113,8 @@ class CrosshairGUI(QWidget):
         initial_thickness = self.settings.get("thickness", 2)
         initial_center_dot_size = self.settings.get("center_dot_size", max(1, initial_size // 3))
         initial_show_dot = self.settings.get("show_center_dot", True)
+        initial_custom_image = self.settings.get("custom_image_path", None)
+        initial_custom_opacity = float(self.settings.get("custom_opacity", 1.0))
 
         # Push into overlay
         self.overlay.set_show_center_dot(initial_show_dot)
@@ -202,6 +124,9 @@ class CrosshairGUI(QWidget):
         self.overlay.set_dot_color(QColor(initial_color))
         self.overlay.set_center_dot_color(QColor(initial_center_color))
         self.overlay.set_thickness(initial_thickness)
+        self.overlay.set_custom_opacity(initial_custom_opacity)
+        if initial_custom_image:
+            self.overlay.set_custom_image(initial_custom_image)
 
         # ---- Themes ----
         self.themes = {
@@ -255,6 +180,13 @@ class CrosshairGUI(QWidget):
         self.center_dot_checkbox.setChecked(initial_show_dot)
         self.center_dot_checkbox.stateChanged.connect(self.toggle_center_dot)
 
+        # --- Custom image controls ---
+        self.btn_upload_custom = QPushButton("🖼️ Upload Custom Crosshair (PNG/JPG)")
+        self.btn_upload_custom.clicked.connect(self.upload_custom_crosshair)
+
+        self.btn_clear_custom = QPushButton("🧹 Clear Custom Crosshair")
+        self.btn_clear_custom.clicked.connect(self.clear_custom_crosshair)
+
         appearance_layout = QVBoxLayout()
         appearance_layout.addWidget(self.btn_color)
         appearance_layout.addWidget(self.btn_center_color)
@@ -265,6 +197,8 @@ class CrosshairGUI(QWidget):
         appearance_layout.addWidget(self.center_dot_label)
         appearance_layout.addWidget(self.center_dot_slider)
         appearance_layout.addWidget(self.center_dot_checkbox)
+        appearance_layout.addWidget(self.btn_upload_custom)
+        appearance_layout.addWidget(self.btn_clear_custom)
         appearance_group.setLayout(appearance_layout)
 
         # ---- Shape group ----
@@ -275,7 +209,7 @@ class CrosshairGUI(QWidget):
         self.shape_combo = QComboBox()
         self.shape_combo.addItems([
             "Dot", "Cross", "V Cross", "Arrow Up", "Shaped Crosshair", "Vertical Line",
-            "Arrow Sides", "T-Hair", "Circle Dot"
+            "Arrow Sides", "T-Hair", "Circle Dot", "Custom"
         ])
         self.shape_combo.setCurrentText(initial_shape)
         self.shape_combo.currentTextChanged.connect(self.update_shape)
@@ -307,8 +241,8 @@ class CrosshairGUI(QWidget):
         layout = QVBoxLayout()
         layout.setSpacing(14)
         layout.setContentsMargins(15, 15, 15, 15)
-        layout.addLayout(help_layout)    # help button row (top-left)
-        layout.addLayout(gif_layout)     # gif row (centered)
+        layout.addLayout(help_layout)
+        layout.addLayout(gif_layout)
         layout.addWidget(appearance_group)
         layout.addWidget(shape_group)
         layout.addWidget(theme_group)
@@ -355,7 +289,7 @@ class CrosshairGUI(QWidget):
             selected_shape = dialog.selected_shape
             if selected_shape:
                 self.overlay.set_shape(selected_shape)
-                self.shape_combo.setCurrentText(selected_shape)  # optional: sync combo
+                self.shape_combo.setCurrentText(selected_shape)
                 self.settings["shape"] = selected_shape
                 self.save_settings()
 
@@ -375,6 +309,31 @@ class CrosshairGUI(QWidget):
         show = state == Qt.Checked
         self.overlay.set_show_center_dot(show)
         self.settings["show_center_dot"] = show
+        self.save_settings()
+
+    # --- Custom image handlers ---
+    def upload_custom_crosshair(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Crosshair Image",
+            "",
+            "Images (*.png *.jpg *.jpeg)"
+        )
+        if path:
+            self.overlay.set_custom_image(path)
+            self.overlay.set_shape("Custom")
+            self.shape_combo.setCurrentText("Custom")
+            self.settings["shape"] = "Custom"
+            self.settings["custom_image_path"] = path
+            self.save_settings()
+
+    def clear_custom_crosshair(self):
+        self.overlay.set_custom_image(None)
+        # Revert to a normal default shape
+        self.overlay.set_shape("Dot")
+        self.shape_combo.setCurrentText("Dot")
+        self.settings["shape"] = "Dot"
+        self.settings.pop("custom_image_path", None)
         self.save_settings()
 
     def update_theme(self, theme_name):
@@ -401,7 +360,8 @@ class CrosshairGUI(QWidget):
                 background-color: {hover};
             }}
         """
-        for b in (self.btn_color, self.btn_center_color, self.btn_reset, self.btn_select_shape, self.btn_help):
+        for b in (self.btn_color, self.btn_center_color, self.btn_reset, self.btn_select_shape, self.btn_help,
+                  self.btn_upload_custom, self.btn_clear_custom):
             b.setStyleSheet(button_style)
 
         slider_style = f"""
@@ -445,7 +405,7 @@ class CrosshairGUI(QWidget):
         for box in self.findChildren(QGroupBox):
             box.setStyleSheet(f"color: {text_color}; font-size: 16px; font-weight: bold;")
 
-        # Theme GIFs (kept as in your original code)
+        # Theme GIFs (kept as your version)
         if theme_name == "Dark Gray":
             gif_path = resource_path("berserk.gif")
             gif_size = QSize(200, 128)
@@ -470,8 +430,7 @@ class CrosshairGUI(QWidget):
         defaults = {
             "theme": "Light Orange", "size": 5, "shape": "Dot",
             "color": "#FF0000", "thickness": 2, "center_dot_color": "#333333",
-            "center_dot_size": 2,
-            "show_center_dot": True
+            "center_dot_size": 2, "show_center_dot": True,
         }
         self.settings = defaults
         self.theme_combo.setCurrentText(defaults["theme"])
@@ -479,10 +438,12 @@ class CrosshairGUI(QWidget):
         self.shape_combo.setCurrentText(defaults["shape"])
         self.thickness_slider.setValue(defaults["thickness"])
         self.overlay.set_dot_color(QColor(defaults["color"]))
-        # UI slider is ×4 compared to stored size
         self.center_dot_slider.setValue(int(defaults["center_dot_size"] * 4))
         self.center_dot_checkbox.setChecked(defaults["show_center_dot"])
         self.overlay.set_show_center_dot(defaults["show_center_dot"])
+        # Clear custom image
+        self.overlay.set_custom_image(None)
+        self.settings.pop("custom_image_path", None)
         self.save_settings()
 
     def load_settings(self):
