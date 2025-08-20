@@ -6,7 +6,9 @@ Perfect for gaming, precision work, or just having a visual center point on your
 
 ## ✨ Features
 - **Multiple Crosshair Shapes** — Dot, Cross, V-Cross, Circle Dot, T-Hair, Arrow styles, and more (as they get added).
+- **Custom Crosshair Upload** — Import your own crosshair image to use in place of the built-in shapes.
 - **Custom Colors & Sizes** — Adjust crosshair color, line thickness, center dot size, and more.
+- **Opacity Slider** — Control crosshair transparency for better blending with your game or app.
 - **Click-Through Overlay** — Stays on top of all windows without blocking mouse input.
 - **Theme Support** — Switch between multiple color themes for the GUI.
 - **Shape Preview Selector** — Visual menu for picking your crosshair shape.
